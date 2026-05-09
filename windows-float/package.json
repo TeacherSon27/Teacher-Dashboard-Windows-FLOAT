@@ -1,0 +1,13 @@
+{
+  "name": "teacher-dashboard-windows-float",
+  "version": "1.0.0",
+  "description": "Windows FLOAT wrapper for the Teacher Dashboard Activity Product Live Wall.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "latest"
+  }
+}
