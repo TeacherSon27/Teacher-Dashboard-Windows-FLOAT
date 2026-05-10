@@ -9,6 +9,7 @@ It opens the dashboard in an always-on-top desktop window so it can stay visible
 - `teacher-dashboard-enhanced.html` - the dashboard page
 - `assets/` - dashboard background images
 - `feature-widget-assets/` - calculator, timer, and die images
+- `game-assets/` - Snakes and Teachers board, player, student, and immunity images
 - `windows-float/` - the Windows Electron wrapper source
 - `Launch FLOAT Windows.bat` - installs dependencies and opens FLOAT on Windows
 
@@ -19,6 +20,18 @@ It opens the dashboard in an always-on-top desktop window so it can stay visible
 3. Double-click `Launch FLOAT Windows.bat`.
 4. The first run installs Electron, so it may take a few minutes.
 5. After that, the FLOAT desktop app opens.
+
+## How to Make Teacher FLOAT.exe
+
+Use this if you want a portable app for other Windows computers, without installing Node.js on each computer.
+
+1. On one Windows computer, install Node.js LTS from `https://nodejs.org/`.
+2. Download or clone this folder.
+3. Double-click `Build Teacher FLOAT EXE.bat`.
+4. Wait for the build to finish.
+5. The final portable app will appear as `Teacher FLOAT.exe`.
+
+You can copy `Teacher FLOAT.exe` to a flash drive and run it on other Windows computers. Those computers should not need Node.js.
 
 ## FLOAT Controls
 

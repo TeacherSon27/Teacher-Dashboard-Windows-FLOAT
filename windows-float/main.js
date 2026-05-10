@@ -1,12 +1,8 @@
-const { app, BrowserWindow, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, screen, session } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const ROOT_DIR = path.resolve(__dirname, "..");
-const DASHBOARD_CANDIDATES = [
-  path.join(ROOT_DIR, "teacher-dashboard-enhanced.html"),
-  path.join(ROOT_DIR, "index.html")
-];
+const DEV_ROOT_DIR = path.resolve(__dirname, "..");
 
 const WINDOW_INSET = 12;
 const LAUNCHER_SIZE = 96;
@@ -21,8 +17,17 @@ let lastLauncherBounds = null;
 let preferredDisplayId = null;
 let launcherDrag = null;
 
+const mediaPermissions = new Set(["media", "camera", "microphone", "display-capture"]);
+
 function dashboardPath() {
-  return DASHBOARD_CANDIDATES.find((filePath) => fs.existsSync(filePath)) || DASHBOARD_CANDIDATES[0];
+  const rootCandidates = app.isPackaged
+    ? [process.resourcesPath, path.dirname(process.execPath), DEV_ROOT_DIR]
+    : [DEV_ROOT_DIR];
+  const dashboardCandidates = rootCandidates.flatMap((rootDir) => [
+    path.join(rootDir, "teacher-dashboard-enhanced.html"),
+    path.join(rootDir, "index.html")
+  ]);
+  return dashboardCandidates.find((filePath) => fs.existsSync(filePath)) || dashboardCandidates[0];
 }
 
 function displayForCursor() {
@@ -39,6 +44,29 @@ function activeDisplay() {
     if (match) return match;
   }
   return displayForCursor();
+}
+
+function isTrustedDashboardUrl(url) {
+  try {
+    return new URL(url).protocol === "file:";
+  } catch (_error) {
+    return false;
+  }
+}
+
+function configureMediaPermissions() {
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (!mediaPermissions.has(permission)) {
+      callback(false);
+      return;
+    }
+    callback(isTrustedDashboardUrl(webContents.getURL()));
+  });
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+    if (!mediaPermissions.has(permission)) return false;
+    const sourceUrl = details?.embeddingOrigin || webContents?.getURL() || requestingOrigin;
+    return isTrustedDashboardUrl(sourceUrl) || requestingOrigin === "file://";
+  });
 }
 
 function rememberDisplayForBounds(bounds) {
@@ -341,6 +369,7 @@ ipcMain.on("launcher:drag-end", () => {
 });
 
 app.whenReady().then(() => {
+  configureMediaPermissions();
   createLauncherWindow();
   createMainWindow();
 

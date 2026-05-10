@@ -5,9 +5,55 @@
   "main": "main.js",
   "private": true,
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "build:win": "electron-builder --win portable --x64"
   },
-  "dependencies": {
-    "electron": "latest"
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest"
+  },
+  "build": {
+    "appId": "com.teacher-dashboard.windows-float",
+    "productName": "Teacher FLOAT",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "launcher.html",
+      "launcher-preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "app-files/teacher-dashboard-enhanced.html",
+        "to": "teacher-dashboard-enhanced.html"
+      },
+      {
+        "from": "app-files/assets",
+        "to": "assets"
+      },
+      {
+        "from": "app-files/feature-widget-assets",
+        "to": "feature-widget-assets"
+      },
+      {
+        "from": "app-files/game-assets",
+        "to": "game-assets"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Teacher FLOAT.exe"
+    }
   }
 }
