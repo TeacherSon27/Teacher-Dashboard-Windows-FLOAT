@@ -1,14 +1,16 @@
-const { app, BrowserWindow, ipcMain, screen, session } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, screen, session } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 
 const DEV_ROOT_DIR = path.resolve(__dirname, "..");
+const APP_FILES_DIR = path.join(__dirname, "app-files");
 
 const WINDOW_INSET = 12;
 const LAUNCHER_SIZE = 96;
 const LAUNCHER_MARGIN = 24;
 const PREVIEW_SIZE = 34;
 const ANIMATION_MS = 320;
+const RENDERER_RELOAD_LIMIT = 2;
 
 let mainWindow = null;
 let launcherWindow = null;
@@ -16,18 +18,38 @@ let isAnimating = false;
 let lastLauncherBounds = null;
 let preferredDisplayId = null;
 let launcherDrag = null;
+let rendererReloadCount = 0;
+let unresponsiveReloadTimer = null;
 
 const mediaPermissions = new Set(["media", "camera", "microphone", "display-capture"]);
 
+function dashboardPathCandidates() {
+  const exeDir = app.isPackaged ? path.dirname(process.execPath) : null;
+  const roots = app.isPackaged
+    ? [process.resourcesPath, exeDir, DEV_ROOT_DIR, APP_FILES_DIR]
+    : [DEV_ROOT_DIR, APP_FILES_DIR, __dirname, process.cwd()];
+
+  const candidates = [];
+  roots.filter(Boolean).forEach((rootDir) => {
+    candidates.push(
+      path.join(rootDir, "teacher-dashboard-enhanced.html"),
+      path.join(rootDir, "index.html"),
+      path.join(rootDir, "app-files", "teacher-dashboard-enhanced.html"),
+      path.join(rootDir, "app-files", "index.html")
+    );
+  });
+
+  return [...new Set(candidates)];
+}
+
 function dashboardPath() {
-  const rootCandidates = app.isPackaged
-    ? [process.resourcesPath, path.dirname(process.execPath), DEV_ROOT_DIR]
-    : [DEV_ROOT_DIR];
-  const dashboardCandidates = rootCandidates.flatMap((rootDir) => [
-    path.join(rootDir, "teacher-dashboard-enhanced.html"),
-    path.join(rootDir, "index.html")
-  ]);
-  return dashboardCandidates.find((filePath) => fs.existsSync(filePath)) || dashboardCandidates[0];
+  const candidates = dashboardPathCandidates();
+  return candidates.find((filePath) => fs.existsSync(filePath)) || candidates[0];
+}
+
+function showStartupError(title, message) {
+  dialog.showErrorBox(title, message);
+  app.quit();
 }
 
 function displayForCursor() {
@@ -52,6 +74,12 @@ function isTrustedDashboardUrl(url) {
   } catch (_error) {
     return false;
   }
+}
+
+function clearUnresponsiveReloadTimer() {
+  if (!unresponsiveReloadTimer) return;
+  clearTimeout(unresponsiveReloadTimer);
+  unresponsiveReloadTimer = null;
 }
 
 function configureMediaPermissions() {
@@ -161,6 +189,63 @@ function applyAlwaysOnTop(window) {
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 }
 
+function reloadDashboard(window, dashboardFile) {
+  if (!window || window.isDestroyed()) return;
+  window.loadFile(dashboardFile).catch((error) => {
+    showStartupError(
+      "Teacher FLOAT could not reload the dashboard",
+      `The dashboard became unstable and could not be reloaded.\n\n${error.message}`
+    );
+  });
+}
+
+function installMainWindowSafeguards(window, dashboardFile) {
+  if (!window || window.isDestroyed()) return;
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-attach-webview", (event) => event.preventDefault());
+  window.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
+  window.webContents.on("zoom-changed", (event) => {
+    event.preventDefault();
+    if (!window.isDestroyed()) window.webContents.setZoomFactor(1);
+  });
+  window.webContents.on("will-navigate", (event, url) => {
+    if (!isTrustedDashboardUrl(url)) event.preventDefault();
+  });
+  window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return;
+    showStartupError(
+      "Teacher FLOAT could not keep the dashboard loaded",
+      `The dashboard failed to load in the Windows renderer.\n\n${errorDescription || "Unknown loading error"}\n${validatedURL || dashboardFile}`
+    );
+  });
+  window.webContents.on("did-finish-load", () => {
+    rendererReloadCount = 0;
+    clearUnresponsiveReloadTimer();
+  });
+  window.webContents.on("render-process-gone", (_event, details) => {
+    clearUnresponsiveReloadTimer();
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    rendererReloadCount += 1;
+    if (rendererReloadCount > RENDERER_RELOAD_LIMIT) {
+      showStartupError(
+        "Teacher FLOAT dashboard stopped responding",
+        `The dashboard renderer stopped repeatedly (${details.reason || "unknown reason"}). Close other heavy apps or restart Teacher FLOAT.`
+      );
+      return;
+    }
+    reloadDashboard(mainWindow, dashboardFile);
+  });
+  window.webContents.on("unresponsive", () => {
+    clearUnresponsiveReloadTimer();
+    unresponsiveReloadTimer = setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      reloadDashboard(mainWindow, dashboardFile);
+    }, 15000);
+  });
+  window.webContents.on("responsive", clearUnresponsiveReloadTimer);
+  window.on("closed", clearUnresponsiveReloadTimer);
+}
+
 function createMainWindow() {
   const display = activeDisplay();
   preferredDisplayId = display.id;
@@ -178,12 +263,22 @@ function createMainWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      backgroundThrottling: false,
+      spellcheck: false
     }
   });
 
   applyAlwaysOnTop(mainWindow);
-  mainWindow.loadFile(dashboardPath());
+  const dashboardFile = dashboardPath();
+  installMainWindowSafeguards(mainWindow, dashboardFile);
+  mainWindow.loadFile(dashboardFile).catch((error) => {
+    const searched = dashboardPathCandidates().map((filePath) => `- ${filePath}`).join("\n");
+    showStartupError(
+      "Teacher FLOAT could not open the dashboard",
+      `Could not load:\n${dashboardFile}\n\n${error.message}\n\nFiles checked:\n${searched}`
+    );
+  });
   mainWindow.once("ready-to-show", () => {
     showMainWindow();
   });
@@ -224,7 +319,9 @@ function createLauncherWindow() {
       preload: path.join(__dirname, "launcher-preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      backgroundThrottling: false,
+      spellcheck: false
     }
   });
 
@@ -368,6 +465,11 @@ ipcMain.on("launcher:drag-end", () => {
   launcherDrag = null;
 });
 
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+app.commandLine.appendSwitch("enable-gpu-rasterization");
+app.commandLine.appendSwitch("touch-events", "enabled");
+app.commandLine.appendSwitch("disable-pinch");
+
 app.whenReady().then(() => {
   configureMediaPermissions();
   createLauncherWindow();
@@ -376,6 +478,10 @@ app.whenReady().then(() => {
   app.on("activate", () => {
     if (!mainWindow) createMainWindow();
   });
+});
+
+app.on("before-quit", () => {
+  clearUnresponsiveReloadTimer();
 });
 
 app.on("window-all-closed", () => {

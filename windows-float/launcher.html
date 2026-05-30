@@ -46,39 +46,64 @@
     const state = {
       down: false,
       moved: false,
+      pointerId: null,
       startX: 0,
       startY: 0
     };
 
-    window.addEventListener("mousedown", (event) => {
+    function inputId(event) {
+      return typeof event.pointerId === "number" ? event.pointerId : "mouse";
+    }
+
+    function beginDrag(event) {
+      if (state.down) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
       state.down = true;
       state.moved = false;
+      state.pointerId = inputId(event);
       state.startX = event.screenX;
       state.startY = event.screenY;
       document.body.classList.add("dragging");
+      try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch (_error) {}
       window.teacherFloatLauncher.dragStart(event.screenX, event.screenY);
-    });
+      event.preventDefault();
+    }
 
-    window.addEventListener("mousemove", (event) => {
-      if (!state.down) return;
+    function moveDrag(event) {
+      if (!state.down || inputId(event) !== state.pointerId) return;
       if (Math.hypot(event.screenX - state.startX, event.screenY - state.startY) > 4) {
         state.moved = true;
       }
       if (state.moved) {
         window.teacherFloatLauncher.dragMove(event.screenX, event.screenY);
       }
-    });
+      event.preventDefault();
+    }
 
-    window.addEventListener("mouseup", () => {
-      if (!state.down) return;
+    function endDrag(event) {
+      if (!state.down || inputId(event) !== state.pointerId) return;
       window.teacherFloatLauncher.dragEnd();
       document.body.classList.remove("dragging");
+      try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch (_error) {}
       if (!state.moved) {
         window.teacherFloatLauncher.restore();
       }
       state.down = false;
       state.moved = false;
-    });
+      state.pointerId = null;
+      event.preventDefault();
+    }
+
+    window.addEventListener("pointerdown", beginDrag);
+    window.addEventListener("pointermove", moveDrag);
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+
+    if (!window.PointerEvent) {
+      window.addEventListener("mousedown", beginDrag);
+      window.addEventListener("mousemove", moveDrag);
+      window.addEventListener("mouseup", endDrag);
+    }
   </script>
 </body>
 </html>

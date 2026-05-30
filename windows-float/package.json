@@ -4,13 +4,17 @@
   "description": "Windows FLOAT wrapper for the Teacher Dashboard Activity Product Live Wall.",
   "main": "main.js",
   "private": true,
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "scripts": {
     "start": "electron .",
     "build:win": "electron-builder --win portable --x64"
   },
   "devDependencies": {
-    "electron": "latest",
-    "electron-builder": "latest"
+    "electron": "40.10.0",
+    "electron-builder": "26.8.1"
   },
   "build": {
     "appId": "com.teacher-dashboard.windows-float",
@@ -42,6 +46,10 @@
       {
         "from": "app-files/game-assets",
         "to": "game-assets"
+      },
+      {
+        "from": "app-files/pdfjs",
+        "to": "pdfjs"
       }
     ],
     "win": {
