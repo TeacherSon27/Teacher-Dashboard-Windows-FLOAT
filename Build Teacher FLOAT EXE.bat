@@ -132,6 +132,7 @@ xcopy /e /i /y "assets" "windows-float\app-files\assets" >nul
 xcopy /e /i /y "feature-widget-assets" "windows-float\app-files\feature-widget-assets" >nul
 xcopy /e /i /y "game-assets" "windows-float\app-files\game-assets" >nul
 xcopy /e /i /y "pdfjs" "windows-float\app-files\pdfjs" >nul
+if exist "assets\teacher-float-launcher.png" copy /y "assets\teacher-float-launcher.png" "windows-float\launcher-logo.png" >nul
 
 if not exist "windows-float\app-files\teacher-dashboard-enhanced.html" (
   echo Failed to prepare the dashboard file for packaging.

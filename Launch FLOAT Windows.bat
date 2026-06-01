@@ -30,6 +30,7 @@ if exist "teacher-dashboard-enhanced.html" (
   if exist "feature-widget-assets" xcopy /e /i /y "feature-widget-assets" "windows-float\app-files\feature-widget-assets" >nul
   if exist "game-assets" xcopy /e /i /y "game-assets" "windows-float\app-files\game-assets" >nul
   if exist "pdfjs" xcopy /e /i /y "pdfjs" "windows-float\app-files\pdfjs" >nul
+  if exist "assets\teacher-float-launcher.png" copy /y "assets\teacher-float-launcher.png" "windows-float\launcher-logo.png" >nul
 )
 
 if not exist "windows-float\app-files\teacher-dashboard-enhanced.html" (
