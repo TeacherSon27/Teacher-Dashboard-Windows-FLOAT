@@ -1,9 +1,11 @@
-const { app, BrowserWindow, dialog, ipcMain, screen, session } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, screen, session } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 
 const DEV_ROOT_DIR = path.resolve(__dirname, "..");
 const APP_FILES_DIR = path.join(__dirname, "app-files");
+const APP_NAME = "Teacher FLOAT";
+const APP_ID = "com.teacher-dashboard.windows-float";
 
 const WINDOW_INSET = 12;
 const LAUNCHER_SIZE = 96;
@@ -11,6 +13,7 @@ const LAUNCHER_MARGIN = 24;
 const PREVIEW_SIZE = 34;
 const ANIMATION_MS = 320;
 const RENDERER_RELOAD_LIMIT = 2;
+const NATIVE_LAYOUT_CHANGE_DELAYS = [20, 120, 350, 650];
 
 let mainWindow = null;
 let launcherWindow = null;
@@ -20,6 +23,14 @@ let preferredDisplayId = null;
 let launcherDrag = null;
 let rendererReloadCount = 0;
 let unresponsiveReloadTimer = null;
+let activeAnimationTimer = null;
+let nativeLayoutTimers = new Set();
+let isQuitting = false;
+app.setName(APP_NAME);
+if (process.platform === "win32") {
+  app.setAppUserModelId(APP_ID);
+}
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 const mediaPermissions = new Set(["media", "camera", "microphone", "display-capture"]);
 
@@ -47,9 +58,37 @@ function dashboardPath() {
   return candidates.find((filePath) => fs.existsSync(filePath)) || candidates[0];
 }
 
+function appIconPath() {
+  const candidates = app.isPackaged
+    ? [
+        path.join(process.resourcesPath, "icon.ico"),
+        path.join(process.resourcesPath, "assets", "teacher-float-logo.png"),
+        path.join(path.dirname(process.execPath), "icon.ico")
+      ]
+    : [
+        path.join(__dirname, "build", "icon.ico"),
+        path.join(APP_FILES_DIR, "assets", "teacher-float-logo.png")
+      ];
+  return candidates.find((filePath) => filePath && fs.existsSync(filePath)) || undefined;
+}
+
 function showStartupError(title, message) {
+  logAppEvent("error", title, message);
   dialog.showErrorBox(title, message);
   app.quit();
+}
+
+function logAppEvent(level, message, detail) {
+  const detailText = detail ? ` ${String(detail).replace(/\s+/g, " ").trim()}` : "";
+  const line = `[${new Date().toISOString()}] [${level.toUpperCase()}] ${message}${detailText}`;
+  const logFn = typeof console[level] === "function" ? console[level] : console.log;
+  logFn(line);
+  try {
+    if (!app.isReady()) return;
+    fs.appendFile(path.join(app.getPath("userData"), "teacher-float.log"), `${line}\n`, () => {});
+  } catch (_error) {
+    // Logging must never interfere with classroom use.
+  }
 }
 
 function displayForCursor() {
@@ -80,6 +119,21 @@ function clearUnresponsiveReloadTimer() {
   if (!unresponsiveReloadTimer) return;
   clearTimeout(unresponsiveReloadTimer);
   unresponsiveReloadTimer = null;
+}
+
+function clearActiveAnimationTimer() {
+  if (!activeAnimationTimer) return;
+  clearInterval(activeAnimationTimer);
+  activeAnimationTimer = null;
+}
+
+function clearNativeLayoutTimers() {
+  nativeLayoutTimers.forEach((timer) => clearTimeout(timer));
+  nativeLayoutTimers.clear();
+}
+
+function isFiniteScreenPoint(point) {
+  return Boolean(point && Number.isFinite(point.x) && Number.isFinite(point.y));
 }
 
 function configureMediaPermissions() {
@@ -170,6 +224,7 @@ function interpolateBounds(from, to, t) {
 }
 
 function animateWindowTransition({ fromBounds, toBounds, onFrame, onDone }) {
+  clearActiveAnimationTimer();
   const start = Date.now();
   const timer = setInterval(() => {
     const elapsed = Date.now() - start;
@@ -178,15 +233,50 @@ function animateWindowTransition({ fromBounds, toBounds, onFrame, onDone }) {
     onFrame(interpolateBounds(fromBounds, toBounds, eased), eased);
     if (amount >= 1) {
       clearInterval(timer);
+      if (activeAnimationTimer === timer) activeAnimationTimer = null;
       onDone();
     }
   }, 16);
+  activeAnimationTimer = timer;
 }
 
 function applyAlwaysOnTop(window) {
   if (!window || window.isDestroyed()) return;
   window.setAlwaysOnTop(true, "screen-saver");
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+}
+
+function notifyDashboardNativeLayoutChange() {
+  clearNativeLayoutTimers();
+  NATIVE_LAYOUT_CHANGE_DELAYS.forEach((delay) => {
+    const timer = setTimeout(() => {
+      nativeLayoutTimers.delete(timer);
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (mainWindow.webContents.isDestroyed()) return;
+      mainWindow.webContents.send("float:native-layout-change");
+    }, delay);
+    nativeLayoutTimers.add(timer);
+  });
+}
+
+function hideLauncherWindow() {
+  if (!launcherWindow || launcherWindow.isDestroyed()) return;
+  launcherWindow.hide();
+  launcherWindow.setOpacity(1);
+}
+
+function eventSenderUrl(event) {
+  return event?.senderFrame?.url || event?.sender?.getURL?.() || "";
+}
+
+function isMainWindowSender(event) {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  return event?.sender === mainWindow.webContents;
+}
+
+function isLauncherWindowSender(event) {
+  if (!launcherWindow || launcherWindow.isDestroyed()) return false;
+  return event?.sender === launcherWindow.webContents;
 }
 
 function reloadDashboard(window, dashboardFile) {
@@ -221,6 +311,7 @@ function installMainWindowSafeguards(window, dashboardFile) {
   window.webContents.on("did-finish-load", () => {
     rendererReloadCount = 0;
     clearUnresponsiveReloadTimer();
+    notifyDashboardNativeLayoutChange();
   });
   window.webContents.on("render-process-gone", (_event, details) => {
     clearUnresponsiveReloadTimer();
@@ -253,9 +344,15 @@ function createMainWindow() {
     ...mainBoundsForDisplay(display),
     minWidth: 720,
     minHeight: 480,
-    title: "Activity Product Live Wall FLOAT",
+    title: APP_NAME,
     show: false,
-    frame: true,
+    frame: false,
+    thickFrame: true,
+    hasShadow: true,
+    skipTaskbar: true,
+    autoHideMenuBar: true,
+    backgroundColor: "#070b1a",
+    icon: appIconPath(),
     resizable: true,
     maximizable: true,
     minimizable: true,
@@ -269,6 +366,7 @@ function createMainWindow() {
     }
   });
 
+  mainWindow.setMenuBarVisibility(false);
   applyAlwaysOnTop(mainWindow);
   const dashboardFile = dashboardPath();
   installMainWindowSafeguards(mainWindow, dashboardFile);
@@ -285,16 +383,34 @@ function createMainWindow() {
   mainWindow.on("move", () => {
     if (!isAnimating && mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
       rememberDisplayForBounds(mainWindow.getBounds());
+      notifyDashboardNativeLayoutChange();
     }
   });
   mainWindow.on("resize", () => {
     if (!isAnimating && mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
       rememberDisplayForBounds(mainWindow.getBounds());
+      notifyDashboardNativeLayoutChange();
     }
   });
   mainWindow.on("minimize", (event) => {
+    if (isQuitting) return;
     event.preventDefault();
     minimizeToLauncher();
+  });
+  mainWindow.on("restore", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    applyAlwaysOnTop(mainWindow);
+    notifyDashboardNativeLayoutChange();
+  });
+  mainWindow.on("close", () => {
+    isQuitting = true;
+    clearActiveAnimationTimer();
+    clearUnresponsiveReloadTimer();
+    clearNativeLayoutTimers();
+    launcherDrag = null;
+    if (launcherWindow && !launcherWindow.isDestroyed()) {
+      launcherWindow.close();
+    }
   });
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -315,6 +431,7 @@ function createLauncherWindow() {
     hasShadow: true,
     skipTaskbar: true,
     alwaysOnTop: true,
+    icon: appIconPath(),
     webPreferences: {
       preload: path.join(__dirname, "launcher-preload.js"),
       contextIsolation: true,
@@ -337,11 +454,55 @@ function showMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const display = activeDisplay();
   preferredDisplayId = display.id;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.setSkipTaskbar(true);
   mainWindow.setBounds(mainBoundsForDisplay(display), false);
   mainWindow.setOpacity(1);
   applyAlwaysOnTop(mainWindow);
   mainWindow.show();
   mainWindow.focus();
+  notifyDashboardNativeLayoutChange();
+}
+
+function minimizeMainWindowToLauncher() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { ok: false, reason: "main-window-unavailable" };
+  }
+  if (isQuitting) {
+    return { ok: false, reason: "application-closing" };
+  }
+  if (isAnimating) {
+    return { ok: false, reason: "window-transition-active" };
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  minimizeToLauncher();
+  return { ok: true, minimized: true, target: "launcher" };
+}
+
+function closeMainWindowSafely() {
+  if (isQuitting) {
+    return { ok: true, closing: true };
+  }
+  isQuitting = true;
+  clearActiveAnimationTimer();
+  clearUnresponsiveReloadTimer();
+  clearNativeLayoutTimers();
+  launcherDrag = null;
+  try {
+    hideLauncherWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.close();
+    } else {
+      app.quit();
+    }
+    return { ok: true, closing: true };
+  } catch (error) {
+    logAppEvent("error", "Could not close the main window cleanly.", error.message);
+    app.quit();
+    return { ok: false, reason: "close-failed" };
+  }
 }
 
 function minimizeToLauncher() {
@@ -386,6 +547,7 @@ function minimizeToLauncher() {
         launcherWindow.showInactive();
       }
       isAnimating = false;
+      notifyDashboardNativeLayoutChange();
     }
   });
 }
@@ -400,6 +562,8 @@ function restoreFromLauncher() {
 
   applyAlwaysOnTop(mainWindow);
   applyAlwaysOnTop(launcherWindow);
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.setSkipTaskbar(true);
   mainWindow.setBounds(launcherBounds, false);
   mainWindow.setOpacity(0);
   mainWindow.show();
@@ -429,6 +593,7 @@ function restoreFromLauncher() {
         mainWindow.focus();
       }
       isAnimating = false;
+      notifyDashboardNativeLayoutChange();
     }
   });
 }
@@ -448,20 +613,43 @@ function moveLauncherTo(screenX, screenY) {
   launcherWindow.setBounds(clamped, false);
 }
 
-ipcMain.on("float:minimize", () => minimizeToLauncher());
-ipcMain.on("float:off", () => app.quit());
-ipcMain.on("launcher:restore", () => restoreFromLauncher());
-ipcMain.on("launcher:drag-start", (_event, point) => {
-  if (!launcherWindow) return;
+function handleMainWindowControl(event, action) {
+  if (!isMainWindowSender(event)) {
+    logAppEvent("warn", `Rejected unauthorized window-control IPC: ${action || "unknown"}`);
+    return { ok: false, reason: "unauthorized-sender" };
+  }
+  if (action === "minimize") return minimizeMainWindowToLauncher();
+  if (action === "off") return closeMainWindowSafely();
+  return { ok: false, reason: "unknown-action" };
+}
+
+ipcMain.handle("float:minimize", (event) => handleMainWindowControl(event, "minimize"));
+ipcMain.handle("float:off", (event) => handleMainWindowControl(event, "off"));
+ipcMain.on("float:minimize", (event) => {
+  handleMainWindowControl(event, "minimize");
+});
+ipcMain.on("float:off", (event) => {
+  handleMainWindowControl(event, "off");
+});
+ipcMain.on("launcher:restore", (event) => {
+  if (!isLauncherWindowSender(event)) return;
+  restoreFromLauncher();
+});
+ipcMain.on("launcher:drag-start", (event, point) => {
+  if (!isLauncherWindowSender(event)) return;
+  if (!launcherWindow || !isFiniteScreenPoint(point)) return;
   launcherDrag = {
     start: point,
     origin: launcherWindow.getBounds()
   };
 });
-ipcMain.on("launcher:drag-move", (_event, point) => {
+ipcMain.on("launcher:drag-move", (event, point) => {
+  if (!isLauncherWindowSender(event)) return;
+  if (!isFiniteScreenPoint(point)) return;
   moveLauncherTo(point.x, point.y);
 });
-ipcMain.on("launcher:drag-end", () => {
+ipcMain.on("launcher:drag-end", (event) => {
+  if (!isLauncherWindowSender(event)) return;
   launcherDrag = null;
 });
 
@@ -470,7 +658,29 @@ app.commandLine.appendSwitch("enable-gpu-rasterization");
 app.commandLine.appendSwitch("touch-events", "enabled");
 app.commandLine.appendSwitch("disable-pinch");
 
+if (!hasSingleInstanceLock) {
+  app.quit();
+}
+
+app.on("second-instance", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  if (!mainWindow.isVisible()) {
+    restoreFromLauncher();
+    return;
+  }
+  mainWindow.show();
+  mainWindow.focus();
+});
+
 app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return;
+  Menu.setApplicationMenu(null);
   configureMediaPermissions();
   createLauncherWindow();
   createMainWindow();
@@ -481,9 +691,12 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
+  isQuitting = true;
+  clearActiveAnimationTimer();
   clearUnresponsiveReloadTimer();
+  clearNativeLayoutTimers();
 });
 
 app.on("window-all-closed", () => {
-  // The launcher/dashboard are hidden during FLOAT transitions, not closed.
+  // The app quits through the explicit main-window close path above.
 });

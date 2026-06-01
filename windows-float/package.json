@@ -1,5 +1,6 @@
 {
   "name": "teacher-dashboard-windows-float",
+  "productName": "Teacher FLOAT",
   "version": "1.0.0",
   "description": "Windows FLOAT wrapper for the Teacher Dashboard Activity Product Live Wall.",
   "main": "main.js",
@@ -28,9 +29,14 @@
       "preload.js",
       "launcher.html",
       "launcher-preload.js",
+      "launcher-logo.png",
       "package.json"
     ],
     "extraResources": [
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      },
       {
         "from": "app-files/teacher-dashboard-enhanced.html",
         "to": "teacher-dashboard-enhanced.html"
@@ -61,7 +67,8 @@
           ]
         }
       ],
-      "artifactName": "Teacher FLOAT.exe"
+      "artifactName": "Teacher FLOAT.exe",
+      "icon": "build/icon.ico"
     }
   }
 }
