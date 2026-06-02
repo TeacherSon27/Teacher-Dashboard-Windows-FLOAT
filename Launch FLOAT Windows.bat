@@ -25,6 +25,7 @@ if exist "teacher-dashboard-enhanced.html" (
   echo Syncing dashboard files for Windows FLOAT...
   if not exist "windows-float\app-files" mkdir "windows-float\app-files"
   copy /y "teacher-dashboard-enhanced.html" "windows-float\app-files\teacher-dashboard-enhanced.html" >nul
+  if exist "manifest.webmanifest" copy /y "manifest.webmanifest" "windows-float\app-files\manifest.webmanifest" >nul
 
   if exist "assets" xcopy /e /i /y "assets" "windows-float\app-files\assets" >nul
   if exist "feature-widget-assets" xcopy /e /i /y "feature-widget-assets" "windows-float\app-files\feature-widget-assets" >nul

@@ -128,6 +128,7 @@ mkdir "windows-float\app-files\game-assets"
 mkdir "windows-float\app-files\pdfjs"
 
 copy /y "teacher-dashboard-enhanced.html" "windows-float\app-files\teacher-dashboard-enhanced.html" >nul
+if exist "manifest.webmanifest" copy /y "manifest.webmanifest" "windows-float\app-files\manifest.webmanifest" >nul
 xcopy /e /i /y "assets" "windows-float\app-files\assets" >nul
 xcopy /e /i /y "feature-widget-assets" "windows-float\app-files\feature-widget-assets" >nul
 xcopy /e /i /y "game-assets" "windows-float\app-files\game-assets" >nul
