@@ -27,25 +27,49 @@ if not exist "feature-widget-assets" (
   exit /b 1
 )
 
-if not exist "feature-widget-assets\lucky-balls" (
-  echo Could not find feature-widget-assets\lucky-balls.
-  echo WHO'S LUCKY needs the 100 transparent numbered ball images.
+if not exist "feature-widget-assets\lucky-student-ships" (
+  echo Could not find feature-widget-assets\lucky-student-ships.
+  echo Student Picker needs the transparent numbered spaceship images.
   pause
   popd >nul
   exit /b 1
 )
 
-if not exist "feature-widget-assets\lucky-balls\lucky-ball-001.png" (
-  echo Could not find lucky-ball-001.png.
-  echo WHO'S LUCKY needs the complete lucky-balls image set.
+if not exist "feature-widget-assets\lucky-student-ships\lucky-student-001.png" (
+  echo Could not find lucky-student-001.png.
+  echo Student Picker needs the complete lucky-student-ships image set.
   pause
   popd >nul
   exit /b 1
 )
 
-if not exist "feature-widget-assets\lucky-balls\lucky-ball-100.png" (
-  echo Could not find lucky-ball-100.png.
-  echo WHO'S LUCKY needs the complete lucky-balls image set.
+if not exist "feature-widget-assets\lucky-student-ships\lucky-student-100.png" (
+  echo Could not find lucky-student-100.png.
+  echo Student Picker needs the complete lucky-student-ships image set.
+  pause
+  popd >nul
+  exit /b 1
+)
+
+if not exist "feature-widget-assets\lucky-point-ships" (
+  echo Could not find feature-widget-assets\lucky-point-ships.
+  echo Points mode needs the transparent numbered point spaceship images.
+  pause
+  popd >nul
+  exit /b 1
+)
+
+if not exist "feature-widget-assets\lucky-point-ships\lucky-point-000.png" (
+  echo Could not find lucky-point-000.png.
+  echo Points mode needs the complete lucky-point-ships image set, including zero.
+  pause
+  popd >nul
+  exit /b 1
+)
+
+if not exist "feature-widget-assets\lucky-point-ships\lucky-point-100.png" (
+  echo Could not find lucky-point-100.png.
+  echo Points mode needs the complete lucky-point-ships image set.
   pause
   popd >nul
   exit /b 1
@@ -156,8 +180,15 @@ if not exist "windows-float\app-files\pdfjs\pdf.worker.min.js" (
   exit /b 1
 )
 
-if not exist "windows-float\app-files\feature-widget-assets\lucky-balls\lucky-ball-100.png" (
-  echo Failed to copy the WHO'S LUCKY numbered ball images for packaging.
+if not exist "windows-float\app-files\feature-widget-assets\lucky-student-ships\lucky-student-100.png" (
+  echo Failed to copy the WHO'S LUCKY student spaceship images for packaging.
+  pause
+  popd >nul
+  exit /b 1
+)
+
+if not exist "windows-float\app-files\feature-widget-assets\lucky-point-ships\lucky-point-000.png" (
+  echo Failed to copy the WHO'S LUCKY point spaceship images for packaging.
   pause
   popd >nul
   exit /b 1
@@ -172,10 +203,14 @@ if not exist "node_modules\electron\dist\electron.exe" set "NEED_INSTALL=1"
 
 if "%NEED_INSTALL%"=="1" (
   echo Installing build dependencies. This only happens the first time.
-  call npm install --no-audit --no-fund
+  if exist "package-lock.json" (
+    call npm ci --no-audit --no-fund
+  ) else (
+    call npm install --no-audit --no-fund
+  )
   if errorlevel 1 (
     echo.
-    echo npm install failed. Check your internet connection, then try again.
+    echo npm dependency installation failed. Check your internet connection, then try again.
     pause
     popd >nul
     popd >nul

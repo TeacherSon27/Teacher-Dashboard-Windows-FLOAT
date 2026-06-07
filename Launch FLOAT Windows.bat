@@ -57,17 +57,33 @@ if not exist "windows-float\app-files\pdfjs\pdf.worker.min.js" (
   exit /b 1
 )
 
-if not exist "windows-float\app-files\feature-widget-assets\lucky-balls\lucky-ball-001.png" (
-  echo Could not find the WHO'S LUCKY numbered ball images.
-  echo Keep feature-widget-assets\lucky-balls with this launcher.
+if not exist "windows-float\app-files\feature-widget-assets\lucky-student-ships\lucky-student-001.png" (
+  echo Could not find the WHO'S LUCKY student spaceship images.
+  echo Keep feature-widget-assets\lucky-student-ships with this launcher.
   pause
   popd >nul
   exit /b 1
 )
 
-if not exist "windows-float\app-files\feature-widget-assets\lucky-balls\lucky-ball-100.png" (
-  echo Could not find the complete WHO'S LUCKY numbered ball image set.
-  echo Keep feature-widget-assets\lucky-balls with this launcher.
+if not exist "windows-float\app-files\feature-widget-assets\lucky-student-ships\lucky-student-100.png" (
+  echo Could not find the complete WHO'S LUCKY student spaceship image set.
+  echo Keep feature-widget-assets\lucky-student-ships with this launcher.
+  pause
+  popd >nul
+  exit /b 1
+)
+
+if not exist "windows-float\app-files\feature-widget-assets\lucky-point-ships\lucky-point-000.png" (
+  echo Could not find the WHO'S LUCKY point spaceship images.
+  echo Keep feature-widget-assets\lucky-point-ships with this launcher.
+  pause
+  popd >nul
+  exit /b 1
+)
+
+if not exist "windows-float\app-files\feature-widget-assets\lucky-point-ships\lucky-point-100.png" (
+  echo Could not find the complete WHO'S LUCKY point spaceship image set.
+  echo Keep feature-widget-assets\lucky-point-ships with this launcher.
   pause
   popd >nul
   exit /b 1
@@ -118,10 +134,14 @@ if not exist "node_modules\electron\dist\electron.exe" set "NEED_INSTALL=1"
 
 if "%NEED_INSTALL%"=="1" (
   echo Installing Windows FLOAT dependencies. This only happens the first time.
-  call npm install --no-audit --no-fund
+  if exist "package-lock.json" (
+    call npm ci --no-audit --no-fund
+  ) else (
+    call npm install --no-audit --no-fund
+  )
   if errorlevel 1 (
     echo.
-    echo npm install failed. Check your internet connection, then try again.
+    echo npm dependency installation failed. Check your internet connection, then try again.
     pause
     popd >nul
     popd >nul
